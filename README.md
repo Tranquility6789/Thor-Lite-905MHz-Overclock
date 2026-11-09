@@ -1,28 +1,29 @@
-# thor-lite-gpu-oc
+# EPIC Thor Lite 905MHz Overclock
 
-Raise the GPU top level of an **AYN Thor Lite** (Snapdragon 865) from 670MHz to 905MHz, with a lower voltage
-than a native overclock needs. It is a small Python tool that patches **your own** `boot.img`; no firmware is
-included or redistributed.
+## [Open the patcher page](https://tranquility6789.github.io/Thor-Lite-905MHz-Overclock/)
 
-> **Use at your own risk.** This changes how your device runs its GPU. While this has been tested thoroughly, it will generate extra heat and make your battery drain faster, and may void any potential warranty. Not affiliated with AYN. Read the whole page first pls
+Raises the GPU top level of an **AYN Thor Lite** (Snapdragon 865) from 670MHz to 905MHz. It is a small Python tool that patches **your own** `boot.img`; no firmware is included or redistributed.
+
+> **Use at your own risk.**
+> This changes how your device runs its GPU. While this has been tested thoroughly, it will generate extra heat and make your battery drain faster, and may void any potential warranty. Not affiliated with AYN. Read the whole page first pls 
 
 ## Tested on
-AYN Thor Lite, firmware build `eng.ThorLi.20251223.153027` (Android 13, kernel 4.19.157), update 1.0.0.257,
-chip revision `20001`. Nothing else has been verified; other builds may differ, and the tool stops if the table
-layout isn't what it expects.
+AYN Thor Lite, firmware build `eng.ThorLi.20251223.153027` (Android 13, kernel 4.19.157), update 1.0.0.257, chip revision `20001`. 
+Nothing else has been verified; other builds may differ, and the tool stops if the table
+layout isn't what it expects. 
 
 Benchmark results (3DMark Wild Life Extreme): 670MHz scored about 1339; 905MHz at voltage
 level 336 scored 1600, with peak draw around 8.7W (vs 9.3W at level 416). Your chip may differ.
 
-## Web version (no Python needed)
-Open `docs/index.html` in Chrome, Edge or Firefox, or use the hosted copy on GitHub Pages. It walks through the
-whole process and patches your `boot.img` in the browser; the file never leaves your computer. The Python tool
-below produces byte-identical output.
+# Web version (no Python needed)
+Use the hosted page: https://tranquility6789.github.io/Thor-Lite-905MHz-Overclock/
+It walks through the whole process and patches your `boot.img` in the browser; the file never leaves your computer. The Python tool below produces byte-identical output.
 
 ## What you need
 - Unlocked bootloader, which should already be the case on your device (`fastboot getvar unlocked` says `yes`) and Android platform-tools (`adb`, `fastboot`)
 - Python 3.8+
 - **Know how to reach fastboot with the hardware buttons** before you flash anything
+- Average intelligence and ability to read and follow instructions
 
 ## 1. Dump your boot image (read-only)
 
@@ -77,5 +78,12 @@ Higher frequencies are not verified. `--force` lets you experiment, but test wit
 ## Contributing
 Reports of other firmware builds, chip revisions and stable voltage levels are welcome. Please never attach
 firmware images, only checksums and the output of `--info`.
+
+## Credits
+Inspired by the community's Retroid Pocket 5 GPU overclock (670MHz to 905MHz). Thanks to Gamma and Dexamph, who made the RP5 overclock images, and to the r/retroid tutorial that described them: <https://www.reddit.com/r/retroid/comments/1jjdejr/>
+
+This project does not use or include any of their files. It patches the user's own Thor Lite boot image. Just wanted to credit them for giving me the idea.
+
+And uh, Claude for patching the stuff together. I guess.
 
 MIT licensed.
