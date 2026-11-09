@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Thor Lite GPU overclock patcher</title>
+<style>
+:root{--bg:#fff;--fg:#1c1e21;--mut:#5b6169;--card:#f4f5f7;--bd:#d9dce1;--ac:#0b6bcb;--warn:#fff4e0;--wfg:#7a4a00;--ok:#e6f6ea;--okfg:#14532d;--bad:#fdeaea;--badfg:#7f1d1d}
+@media(prefers-color-scheme:dark){:root{--bg:#14161a;--fg:#e8eaed;--mut:#9aa0a8;--card:#1d2026;--bd:#333842;--ac:#6ab0ff;--warn:#3a2c10;--wfg:#ffd89a;--ok:#12301c;--okfg:#9ae6b4;--bad:#3b1818;--badfg:#ffb4b4}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:20px 16px 48px}h1{font-size:1.5rem;margin:.2em 0}h2{font-size:1.1rem;margin:1.6em 0 .4em}
+p,li{color:var(--fg)}.mut{color:var(--mut)}.box{padding:12px 14px;border-radius:8px;margin:12px 0}.warn{background:var(--warn);color:var(--wfg)}.ok{background:var(--ok);color:var(--okfg)}.bad{background:var(--bad);color:var(--badfg)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:14px;margin:10px 0}
+pre{position:relative;background:var(--card);border:1px solid var(--bd);border-radius:6px;padding:10px 70px 10px 10px;overflow-x:auto;margin:8px 0;font-size:.85rem}
+pre button{position:absolute;top:6px;right:6px}button,input[type=file]{font:inherit}button{background:var(--ac);color:var(--bg);border:0;border-radius:6px;padding:6px 12px;cursor:pointer}button:disabled{opacity:.4;cursor:not-allowed}
+pre button{padding:2px 8px;font-size:.75rem}label{margin-right:14px}input[type=number]{width:5.5em;font:inherit;padding:3px;background:var(--bg);color:var(--fg);border:1px solid var(--bd);border-radius:4px}
+code{font-size:.9em}#log div{margin:2px 0;font-size:.9rem;word-break:break-all}
+</style></head><body><main>
+<h1>Thor Lite GPU overclock patcher</h1>
+<p class="mut">Raises the GPU top level of an AYN Thor Lite from 670MHz to 905MHz at a lower voltage level. Your files never leave your computer: everything runs in this page.</p>
+<div class="box warn"><b>Use at your own risk.</b> This can cause crashes, extra heat and faster battery drain, and may void your warranty. Not affiliated with AYN. Test with <code>fastboot boot</code> before flashing, keep your original backup in two places, and know how to reach fastboot with the hardware buttons before you flash anything.</div>
+<p>Tested only on firmware build <code>eng.ThorLi.20251223.153027</code> (bootloader unlocked). Other builds may differ; this page stops if the table isn’t what it expects.</p>
+
+<h2>1. Dump your boot image (read-only)</h2>
+<p>You need <code>adb</code> and <code>fastboot</code> (Android platform-tools) and an unlocked bootloader. Download the script, run it on the device through Settings → <b>Run Script as Root</b>, then pull the result.</p>
+<button id="dl">Download dump_boot.sh</button>
+<pre>adb push dump_boot.sh /sdcard/</pre>
+<pre>adb shell cat /sdcard/thor_dump_log.txt
+adb pull /sdcard/thor_backup/boot.img .
+shasum -a 256 boot.img</pre>
+<p class="mut">The log should show 100663296 bytes. Keep <code>boot.img</code> safe: it is your way back to stock.</p>
+
+<h2>2. Patch it</h2>
+<div class="card">
+<p><input type="file" id="file" accept=".img"></p>
+<p><label>GPU MHz <input type="number" id="mhz" value="905" min="700" max="1200"></label>
+<label>Voltage level <input type="number" id="lvl" value="336" min="64" max="500"></label>
+<label><input type="checkbox" id="force"> allow unverified values</label></p>
+<p><button id="go" disabled>Patch</button> <button id="save" disabled>Download patched image</button></p>
+<div id="log"></div></div>
+
+<h2>3. Test without installing anything</h2>
+<pre>adb reboot bootloader
+fastboot boot boot_gpu905_lv336.img
+adb shell cat /sys/class/kgsl/kgsl-3d0/gpu_available_frequencies</pre>
+<p>The first value should read <code>905000000</code>. A restart returns to stock. If the screen stays blank or it hangs, hold power for about 15 seconds. Run games and a stress test before going further.</p>
+
+<h2>4. Flash permanently (optional)</h2>
+<pre>fastboot getvar current-slot
+fastboot flash boot_a boot_gpu905_lv336.img
+fastboot reboot</pre>
+<p>Use the slot that <code>current-slot</code> reports. An AYN firmware update replaces the boot image and removes the overclock.</p>
+
+<h2>Back to stock</h2>
+<pre>adb reboot bootloader
+fastboot flash boot_a boot.img
+fastboot reboot</pre>
+<p>If Android won’t start, hold the button combo for fastboot (Power + Volume Down on the Thor Lite) and run the last two commands.</p>
+</main>
+<script>
+/*CORE*/
+const KNOWN_LEVELS=[64,128,144,192,224,256,320,336,384,416],MAX_MHZ=905,te=new TextDecoder();
+const KNOWN_IN='275d3aeaeae8c65312a0c428b57906c9e0a8d40721266e388fa041ac89ad1efa',KNOWN_OUT='cffd9fefb6641e9c52a33aba4e0c9d47e845e7cc971a6ba892da2d3247734d8b';
+function fdt(u,base){const dv=new DataView(u.buffer,u.byteOffset,u.length);
+ if(dv.getUint32(base)!==0xd00dfeed)throw new Error('dtb');
+ const total=dv.getUint32(base+4),offS=dv.getUint32(base+8),offStr=dv.getUint32(base+12),nodes={},path=[],stack=[];let p=offS;
+ const cstr=a=>{let e=a;while(u[base+e])e++;return[te.decode(u.subarray(base+a,base+e)),e]};
+ for(;;){const t=dv.getUint32(base+p);p+=4;
+  if(t===1){const[n,e]=cstr(p);p=(e+1+3)&~3;path.push(n);const k=path.join('/');nodes[k]={};stack.push(k)}
+  else if(t===2){path.pop();stack.pop()}
+  else if(t===3){const len=dv.getUint32(base+p),no=dv.getUint32(base+p+4);p+=8;const[pn]=cstr(offStr+no);nodes[stack[stack.length-1]][pn]=[base+p,len];p=(p+len+3)&~3}
+  else if(t===9)break;else if(t!==4)throw new Error('bad token')}
+ return{total,nodes}}
+function layout(u){const dv=new DataView(u.buffer,u.byteOffset,u.length);
+ if(String.fromCharCode(...u.subarray(0,8))!=='ANDROID!')throw new Error('This isn’t an Android boot image.');
+ const L=o=>dv.getUint32(o,true),page=L(36),hv=L(40);
+ if(hv!==2)throw new Error('Unsupported boot header version '+hv+' (only version 2 is handled).');
+ const al=x=>Math.ceil(x/page)*page,ksz=L(8),rsz=L(16),ssz=L(24),rdsz=L(1632),dsz=L(1648);
+ const ko=page,ro=ko+al(ksz),so=ro+al(rsz),rdo=so+al(ssz),dto=rdo+al(rdsz);
+ return{dv,ksz,rsz,ssz,rdsz,dsz,ko,ro,so,rdo,dto,end:dto+al(dsz)}}
+function scan(u){const lay=layout(u),blobs=[];let o=0;
+ while(o+8<=lay.dsz&&lay.dv.getUint32(lay.dto+o)===0xd00dfeed){let r;try{r=fdt(u,lay.dto+o)}catch(e){break}
+  const opp=[];for(const k in r.nodes){const n=r.nodes[k];if(/^\/soc\/gpu-opp-table_v2\/opp-\d+$/.test(k)&&n['opp-hz']&&n['opp-microvolt'])opp.push({k,hz:lay.dv.getUint32(n['opp-hz'][0])*4294967296+lay.dv.getUint32(n['opp-hz'][0]+4)})}
+  opp.sort((a,b)=>b.hz-a.hz);
+  const top=Object.keys(r.nodes).filter(k=>k.endsWith('qcom,gpu-pwrlevel@0')&&r.nodes[k]['qcom,gpu-freq']);
+  blobs.push({o,nodes:r.nodes,opp,top});o+=r.total}
+ return{lay,blobs}}
+function describe(blobs,dv){return blobs.filter(b=>b.opp.length).map(b=>'dtb blob @'+b.o+': GPU levels (MHz) '+b.opp.map(x=>x.hz/1e6).join(', ')+'; top voltage level '+dv.getUint32(b.nodes[b.opp[0].k]['opp-microvolt'][0]))}
+async function sha(u,alg){return[...new Uint8Array(await crypto.subtle.digest(alg,u))].map(x=>x.toString(16).padStart(2,'0')).join('')}
+async function patchBoot(buf,mhz,level,force){
+ const u=buf.slice(),{lay,blobs}=scan(u),T=blobs.filter(b=>b.opp.length&&b.top.length);
+ if(!T.length)throw new Error('No supported GPU table found in this image.');
+ if(!Number.isInteger(mhz)||!Number.isInteger(level))throw new Error('Enter whole numbers.');
+ if(!force){if(mhz>MAX_MHZ)throw new Error(mhz+'MHz is above the highest verified value ('+MAX_MHZ+'MHz).');
+  if(!KNOWN_LEVELS.includes(level))throw new Error('Level '+level+' is not one of the known levels: '+KNOWN_LEVELS.join(', ')+'.')}
+ const hz=mhz*1e6,dv=lay.dv;let n=0;
+ for(const b of T){if(b.opp.length<2||hz<=b.opp[1].hz)throw new Error('The new frequency must be higher than the second-highest GPU level.');
+  const old=b.opp[0].hz,node=b.nodes[b.opp[0].k];
+  dv.setUint32(node['opp-hz'][0],Math.floor(hz/4294967296));dv.setUint32(node['opp-hz'][0]+4,hz%4294967296);dv.setUint32(node['opp-microvolt'][0],level);n+=2;
+  for(const p of b.top){const o=b.nodes[p]['qcom,gpu-freq'][0];if(dv.getUint32(o)===old){dv.setUint32(o,hz);n++}}}
+ const parts=[[lay.ko,lay.ksz],[lay.ro,lay.rsz],[lay.so,lay.ssz],[lay.rdo,lay.rdsz],[lay.dto,lay.dsz]];
+ const cat=new Uint8Array(parts.reduce((a,[,s])=>a+s+4,0)),dc=new DataView(cat.buffer);let q=0;
+ for(const[off,s]of parts){cat.set(u.subarray(off,off+s),q);q+=s;dc.setUint32(q,s,true);q+=4}
+ u.fill(0,0x240,0x260);u.set(new Uint8Array(await crypto.subtle.digest('SHA-1',cat)),0x240);
+ return{out:u.slice(0,lay.end),changed:n,blobs:T.length}}
+/*ENDCORE*/
+if(typeof document!=='undefined'){
+const $=i=>document.getElementById(i);let buf=null,out=null,name='';
+const log=(t,c)=>{const d=document.createElement('div');d.textContent=t;if(c)d.className='box '+c;$('log').appendChild(d)};
+const DUMP=['#!/system/bin/sh','# Read-only: copies the ACTIVE slot’s boot partition to /sdcard/thor_backup/boot.img.','# One command per line on purpose: the script runner does not handle multi-line blocks.',
+'echo "dump started" > /sdcard/thor_dump_log.txt','mkdir -p /sdcard/thor_backup','getprop ro.build.fingerprint >> /sdcard/thor_dump_log.txt','getprop ro.boot.slot_suffix >> /sdcard/thor_dump_log.txt',
+'dd if=/dev/block/by-name/boot$(getprop ro.boot.slot_suffix) of=/sdcard/thor_backup/boot.img bs=1048576 >> /sdcard/thor_dump_log.txt 2>&1',
+'sha256sum /sdcard/thor_backup/boot.img >> /sdcard/thor_dump_log.txt 2>&1','ls -l /sdcard/thor_backup >> /sdcard/thor_dump_log.txt 2>&1','echo "dump finished" >> /sdcard/thor_dump_log.txt',''].join('\n').replace('’',"'");
+const save=(data,fn)=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data]));a.download=fn;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),4000)};
+$('dl').onclick=()=>save(DUMP,'dump_boot.sh');
+document.querySelectorAll('pre').forEach(p=>{const b=document.createElement('button');b.textContent='Copy';b.onclick=()=>navigator.clipboard.writeText(p.firstChild.textContent).then(()=>{b.textContent='Copied';setTimeout(()=>b.textContent='Copy',1200)});p.appendChild(b)});
+$('file').onchange=async e=>{$('log').textContent='';$('go').disabled=$('save').disabled=true;out=null;const f=e.target.files[0];if(!f)return;
+ try{buf=new Uint8Array(await f.arrayBuffer());const{lay,blobs}=scan(buf);describe(blobs,lay.dv).forEach(t=>log(t));
+  const h=await sha(buf,'SHA-256');log('SHA-256 of your file: '+h);
+  if(h===KNOWN_IN)log('This is the known, tested firmware build.','ok');else log('Unknown firmware build: the result is untested. Test it with fastboot boot before anything else.','warn');
+  if(!blobs.some(b=>b.opp.length&&b.top.length))log('No supported GPU table found.','bad');else $('go').disabled=false}
+ catch(err){log(err.message,'bad')}};
+$('go').onclick=async()=>{$('save').disabled=true;try{const mhz=+$('mhz').value,lvl=+$('lvl').value;
+ const r=await patchBoot(buf,mhz,lvl,$('force').checked);out=r.out;name='boot_gpu'+mhz+'_lv'+lvl+'.img';
+ const h=await sha(out,'SHA-256');log('Patched '+r.changed+' values in '+r.blobs+' dtb blob(s): top GPU level is now '+mhz+'MHz at voltage level '+lvl+'.','ok');
+ log('Output SHA-256: '+h+' ('+out.length+' bytes)');
+ if(mhz===905&&lvl===336&&h===KNOWN_OUT)log('Matches the image that was tested and flashed on the author’s device.','ok');$('save').disabled=false}
+ catch(err){log(err.message,'bad')}};
+$('save').onclick=()=>out&&save(out,name);
+}
+</script></body></html>
