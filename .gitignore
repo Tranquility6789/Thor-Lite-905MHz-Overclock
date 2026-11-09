@@ -1,0 +1,4 @@
+*.img
+*.img.gz
+thor_backup
+__pycache__
