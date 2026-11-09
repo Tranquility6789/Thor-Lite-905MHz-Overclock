@@ -1,19 +1,18 @@
 # thor-lite-gpu-oc
 
 Raise the GPU top level of an **AYN Thor Lite** (Snapdragon 865) from 670MHz to 905MHz, with a lower voltage
-than a naive overclock needs. It is a small Python tool that patches **your own** `boot.img`; no firmware is
+than a native overclock needs. It is a small Python tool that patches **your own** `boot.img`; no firmware is
 included or redistributed.
 
-> **Use at your own risk.** This changes how your device runs its GPU. It can cause crashes, extra heat and
-> faster battery drain, and may void your warranty. Not affiliated with AYN. Read the whole page first.
+> **Use at your own risk.** This changes how your device runs its GPU. While this has been tested thoroughly, it will generate extra heat and make your battery drain faster, and may void any potential warranty. Not affiliated with AYN. Read the whole page first pls
 
 ## Tested on
-AYN Thor Lite, firmware build `eng.ThorLi.20251223.153027` (Android 13, kernel 4.19.157), bootloader unlocked,
+AYN Thor Lite, firmware build `eng.ThorLi.20251223.153027` (Android 13, kernel 4.19.157), update 1.0.0.257,
 chip revision `20001`. Nothing else has been verified; other builds may differ, and the tool stops if the table
 layout isn't what it expects.
 
-Author's results on one unit (3DMark Wild Life Extreme): stock 670MHz scored about 1340; 905MHz at voltage
-level 336 scored about 1584 to 1592, with peak draw around 8.7W (vs 9.3W at level 416). Your chip may differ.
+Benchmark results (3DMark Wild Life Extreme): 670MHz scored about 1339; 905MHz at voltage
+level 336 scored 1600, with peak draw around 8.7W (vs 9.3W at level 416). Your chip may differ.
 
 ## Web version (no Python needed)
 Open `docs/index.html` in Chrome, Edge or Firefox, or use the hosted copy on GitHub Pages. It walks through the
@@ -21,17 +20,20 @@ whole process and patches your `boot.img` in the browser; the file never leaves 
 below produces byte-identical output.
 
 ## What you need
-- Unlocked bootloader (`fastboot getvar unlocked` says `yes`) and Android platform-tools (`adb`, `fastboot`)
+- Unlocked bootloader, which should already be the case on your device (`fastboot getvar unlocked` says `yes`) and Android platform-tools (`adb`, `fastboot`)
 - Python 3.8+
 - **Know how to reach fastboot with the hardware buttons** before you flash anything
 
 ## 1. Dump your boot image (read-only)
+
+**(if you haven't already)** Enable Developer Options. Go to settings (it's in the notification drop down if you can't find it), About handheld console, then go all the way down to the build number and press it 7 times. Go back into settings, then system, then developer options. Enable it and scroll down to USB debugging and enable it. Now plug in your Thor Lite.
+
 1. `adb push scripts/dump_boot.sh /sdcard/`
-2. On the device: Settings, the Thor/Handheld settings menu, **Run Script as Root**, pick `dump_boot.sh`
+2. On the device: Go to settings, scroll down to the Thor/Handheld settings menu, scroll down till you see **Run Script as Root**, and pick `dump_boot.sh` (it's in the root directory)
 3. `adb shell cat /sdcard/thor_dump_log.txt` should show a size of 100663296 bytes and a checksum
 4. `adb pull /sdcard/thor_backup/boot.img .` then run `shasum -a 256 boot.img` and compare with the log
 
-**Keep `boot.img` safe, in two places. It is your way back to stock.**
+**Keep the original `boot.img` safe, in two places. If anything goes wrong, you can revert your way back to stock with it.**
 
 ## 2. Patch it
 ```
@@ -39,7 +41,7 @@ python3 thor_gpu_oc.py boot.img --info
 python3 thor_gpu_oc.py boot.img -o boot_gpu905_lv336.img --freq 905 --level 336
 ```
 Defaults are 905MHz and voltage level 336. Values outside what has been verified are refused unless you add
-`--force`. If 336 is unstable on your chip, try `--level 384`.
+`--force`. If 336 happens to be unstable on your chip, try `--level 384`.
 
 ## 3. Test without installing anything
 ```
@@ -60,9 +62,9 @@ fastboot reboot
 ```
 Use the slot that `current-slot` reports. **Back to stock:** boot to fastboot and run
 `fastboot flash boot_a boot.img` with your original dump. An AYN firmware update will replace the boot image
-and remove the overclock; restore stock before updating.
+and remove the overclock; make sure to restore stock before updating.
 
-## How it works
+## How it works 
 The GPU frequency table lives in the device-tree blobs inside `boot.img`. The kernel checks two tables
 against each other, so both must change together: `qcom,gpu-pwrlevel@0` (`qcom,gpu-freq`) and
 `/soc/gpu-opp-table_v2` (`opp-hz`, plus `opp-microvolt`, which holds the voltage level). Changing only one
