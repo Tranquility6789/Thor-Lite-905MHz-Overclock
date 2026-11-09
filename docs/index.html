@@ -16,10 +16,10 @@ code{font-size:.9em}#log div{margin:2px 0;font-size:.9rem;word-break:break-all}
 <h1>EPIC Thor Lite GPU overclock patcher</h1>
 <p class="mut">Raises the GPU max clock of the AYN Thor Lite from 670MHz to 905MHz. Your files never leave your computer as everything runs in this page.</p>
 <div class="box warn"><b>Use at your own risk.</b> While this has been tested thorougly, this may still potentially cause issues, and may void your warranty. Not affiliated with AYN. Test with <code>fastboot boot</code> before flashing, keep your original backup safe, and know how to reach fastboot with the hardware buttons before you flash anything.</div>
-<p>Tested only on firmware build <code>eng.ThorLi.20251223.153027</code> (bootloader unlocked). Other builds may differ; this page stops if the table isn’t what it expects.</p>
+<p>Tested only on firmware build <code>eng.ThorLi.20251223.153027</code> and the update 1.0.0.257. Other builds may differ; this page stops if the table isn’t what it expects.</p>
 
 <h2>1. Dump your boot image (read-only)</h2>
-<p>You need <code>adb</code> and <code>fastboot</code> (Android platform-tools) and an unlocked bootloader. Download the script, run it on the device through Settings → <b>Run Script as Root</b>, then pull the result.</p>
+<p>You need <code>adb</code> and <code>fastboot</code> (Android platform-tools) and usb debugging enabled on your device. Download the script, run it on the device through Settings → <b>Run Script as Root</b>, then pull the result.</p>
 <button id="dl">Download dump_boot.sh</button>
 <pre>adb push dump_boot.sh /sdcard/</pre>
 <pre>adb shell cat /sdcard/thor_dump_log.txt
