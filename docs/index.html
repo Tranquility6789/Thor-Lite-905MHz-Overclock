@@ -28,9 +28,11 @@ shasum -a 256 boot.img</pre>
 <p class="mut">The log should show 100663296 bytes. Keep <code>boot.img</code> safe: it is your way back to stock.</p>
 
 <h2>2. Patch it</h2>
+<p>First check that your stock GPU table starts at 670MHz: run <code>adb shell cat /sys/class/kgsl/kgsl-3d0/gpu_available_frequencies</code>. The first value must be <code>670000000</code>; if it isn’t, this patch isn’t for your chip. “Stepped ladder” builds the 905-780-670-587-490-400-305 table; “Top step only” just swaps 670 for the new top.</p>
 <div class="card">
 <p><input type="file" id="file" accept=".img"></p>
-<p><label>GPU MHz <input type="number" id="mhz" value="905" min="700" max="1200"></label>
+<p><label>Mode <select id="mode"><option value="ladder">Stepped ladder (recommended)</option><option value="top">Top step only</option></select></label>
+<label>GPU MHz <input type="number" id="mhz" value="905" min="700" max="1200"></label>
 <label>Voltage level <input type="number" id="lvl" value="336" min="64" max="500"></label>
 <label><input type="checkbox" id="force"> allow unverified values</label></p>
 <p><button id="go" disabled>Patch</button> <button id="save" disabled>Download patched image</button></p>
@@ -38,13 +40,13 @@ shasum -a 256 boot.img</pre>
 
 <h2>3. Test without installing anything</h2>
 <pre>adb reboot bootloader
-fastboot boot boot_gpu905_lv336.img
+fastboot boot boot_gpu_ladder.img
 adb shell cat /sys/class/kgsl/kgsl-3d0/gpu_available_frequencies</pre>
-<p>The first value should read <code>905000000</code>. A restart returns to stock. If the screen stays blank or it hangs, hold power for about 15 seconds. Run games and a stress test before going further.</p>
+<p>The first value should read <code>905000000</code> (in ladder mode the full list is <code>905000000 780000000 670000000 587000000 490000000 400000000 305000000</code>). Use the file name you downloaded. A restart returns to stock. If the screen stays blank or it hangs, hold power for about 15 seconds. Run games and a stress test before going further.</p>
 
 <h2>4. Flash permanently (optional)</h2>
 <pre>fastboot getvar current-slot
-fastboot flash boot_a boot_gpu905_lv336.img
+fastboot flash boot_a boot_gpu_ladder.img
 fastboot reboot</pre>
 <p>Use the slot that <code>current-slot</code> reports. An AYN firmware update replaces the boot image and removes the overclock.</p>
 
@@ -56,8 +58,8 @@ fastboot reboot</pre>
 </main>
 <script>
 /*CORE*/
-const KNOWN_LEVELS=[64,128,144,192,224,256,320,336,384,416],MAX_MHZ=905,te=new TextDecoder();
-const KNOWN_IN='275d3aeaeae8c65312a0c428b57906c9e0a8d40721266e388fa041ac89ad1efa',KNOWN_OUT='cffd9fefb6641e9c52a33aba4e0c9d47e845e7cc971a6ba892da2d3247734d8b';
+const KNOWN_LEVELS=[64,128,144,192,224,256,320,336,384,416],MAX_MHZ=905,te=new TextDecoder(),STOCK=[670,587,525,490,441.6,400,305],LADDER=[[780,336],[670,320],[587,256],[490,192]],PROP_SRC=[0,1,0,1,3];
+const KNOWN_IN='275d3aeaeae8c65312a0c428b57906c9e0a8d40721266e388fa041ac89ad1efa',KNOWN_OUT='cffd9fefb6641e9c52a33aba4e0c9d47e845e7cc971a6ba892da2d3247734d8b',KNOWN_OUT_LADDER='9cbdebf0b164dc84905819d922bfc1a1193488e29ec55508ed31f46bd6c2ea46';
 function fdt(u,base){const dv=new DataView(u.buffer,u.byteOffset,u.length);
  if(dv.getUint32(base)!==0xd00dfeed)throw new Error('dtb');
  const total=dv.getUint32(base+4),offS=dv.getUint32(base+8),offStr=dv.getUint32(base+12),nodes={},path=[],stack=[];let p=offS;
@@ -84,14 +86,27 @@ function scan(u){const lay=layout(u),blobs=[];let o=0;
  return{lay,blobs}}
 function describe(blobs,dv){return blobs.filter(b=>b.opp.length).map(b=>'dtb blob @'+b.o+': GPU levels (MHz) '+b.opp.map(x=>x.hz/1e6).join(', ')+'; top voltage level '+dv.getUint32(b.nodes[b.opp[0].k]['opp-microvolt'][0]))}
 async function sha(u,alg){return[...new Uint8Array(await crypto.subtle.digest(alg,u))].map(x=>x.toString(16).padStart(2,'0')).join('')}
-async function patchBoot(buf,mhz,level,force){
+async function patchBoot(buf,mhz,level,force,mode='ladder'){
  const u=buf.slice(),{lay,blobs}=scan(u),T=blobs.filter(b=>b.opp.length&&b.top.length);
  if(!T.length)throw new Error('No supported GPU table found in this image.');
  if(!Number.isInteger(mhz)||!Number.isInteger(level))throw new Error('Enter whole numbers.');
  if(!force){if(mhz>MAX_MHZ)throw new Error(mhz+'MHz is above the highest verified value ('+MAX_MHZ+'MHz).');
   if(!KNOWN_LEVELS.includes(level))throw new Error('Level '+level+' is not one of the known levels: '+KNOWN_LEVELS.join(', ')+'.')}
  const hz=mhz*1e6,dv=lay.dv;let n=0;
- for(const b of T){if(b.opp.length<2||hz<=b.opp[1].hz)throw new Error('The new frequency must be higher than the second-highest GPU level.');
+ if(mode==='ladder'){
+  if(mhz<=LADDER[0][0])throw new Error('In ladder mode the top step must be above '+LADDER[0][0]+'MHz.');
+  const steps=[[mhz,level],...LADDER];
+  for(const b of T){
+   if(b.opp.map(x=>x.hz/1e6).join()!==STOCK.join())throw new Error('This image’s GPU table isn’t the stock 7-step ladder (already patched?). Use a stock dump or “Top step only”.');
+   steps.forEach(([m,l],i)=>{const nd=b.nodes[b.opp[i].k];dv.setUint32(nd['opp-hz'][0],Math.floor(m*1e6/4294967296));dv.setUint32(nd['opp-hz'][0]+4,m*1e6%4294967296);dv.setUint32(nd['opp-microvolt'][0],l);n+=2});
+   const bins={};for(const p in b.nodes){if(p.split('/').pop().startsWith('qcom,gpu-pwrlevel@')&&b.nodes[p]['qcom,gpu-freq']){const par=p.slice(0,p.lastIndexOf('/'));(bins[par]=bins[par]||[]).push(p)}}
+   for(const kids of Object.values(bins)){
+    kids.sort((x,y)=>+x.split('@').pop()-+y.split('@').pop());
+    if(kids.map(k=>dv.getUint32(b.nodes[k]['qcom,gpu-freq'][0])/1e6).join()!==STOCK.concat([0]).join())continue;
+    const stock=kids.slice(0,5).map(k=>{const o={};for(const nm in b.nodes[k])if(nm!=='reg'&&nm!=='qcom,gpu-freq'){const[off,len]=b.nodes[k][nm];o[nm]=u.slice(off,off+len)}return o});
+    for(let i=0;i<5;i++){const t=b.nodes[kids[i]];dv.setUint32(t['qcom,gpu-freq'][0],steps[i][0]*1e6);n++;
+     for(const nm in stock[PROP_SRC[i]]){const v=stock[PROP_SRC[i]][nm];if(!t[nm]||t[nm][1]!==v.length)throw new Error('Unexpected GPU level properties.');u.set(v,t[nm][0]);n++}}}}}
+ for(const b of (mode==='ladder'?[]:T)){if(b.opp.length<2||hz<=b.opp[1].hz)throw new Error('The new frequency must be higher than the second-highest GPU level.');
   const old=b.opp[0].hz,node=b.nodes[b.opp[0].k];
   dv.setUint32(node['opp-hz'][0],Math.floor(hz/4294967296));dv.setUint32(node['opp-hz'][0]+4,hz%4294967296);dv.setUint32(node['opp-microvolt'][0],level);n+=2;
   for(const p of b.top){const o=b.nodes[p]['qcom,gpu-freq'][0];if(dv.getUint32(o)===old){dv.setUint32(o,hz);n++}}}
@@ -118,10 +133,10 @@ $('file').onchange=async e=>{$('log').textContent='';$('go').disabled=$('save').
   if(!blobs.some(b=>b.opp.length&&b.top.length))log('No supported GPU table found.','bad');else $('go').disabled=false}
  catch(err){log(err.message,'bad')}};
 $('go').onclick=async()=>{$('save').disabled=true;try{const mhz=+$('mhz').value,lvl=+$('lvl').value;
- const r=await patchBoot(buf,mhz,lvl,$('force').checked);out=r.out;name='boot_gpu'+mhz+'_lv'+lvl+'.img';
+ const mode=$('mode').value;const r=await patchBoot(buf,mhz,lvl,$('force').checked,mode);out=r.out;name=mode==='ladder'?'boot_gpu_ladder.img':'boot_gpu'+mhz+'_lv'+lvl+'.img';
  const h=await sha(out,'SHA-256');log('Patched '+r.changed+' values in '+r.blobs+' dtb blob(s): top GPU level is now '+mhz+'MHz at voltage level '+lvl+'.','ok');
  log('Output SHA-256: '+h+' ('+out.length+' bytes)');
- if(mhz===905&&lvl===336&&h===KNOWN_OUT)log('Matches the image that was tested and flashed on the author’s device.','ok');$('save').disabled=false}
+ if(mhz===905&&lvl===336&&h===(mode==='ladder'?KNOWN_OUT_LADDER:KNOWN_OUT))log('Matches the image that was tested and flashed on the author’s device.','ok');$('save').disabled=false}
  catch(err){log(err.message,'bad')}};
 $('save').onclick=()=>out&&save(out,name);
 }
