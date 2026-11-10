@@ -2,7 +2,7 @@
 
 ## [Open the patcher page](https://tranquility6789.github.io/Thor-Lite-905MHz-Overclock/)
 
-Raises the GPU top level of an **AYN Thor Lite** (Snapdragon 865) from 670MHz to 905MHz. It also changes the GPU steps to be more gradual to the 905MHz increase. It is a small Python tool that patches **your own** `boot.img`; no firmware is included or redistributed.
+Raises the GPU top level of an **AYN Thor Lite** (Snapdragon 865) from 670MHz to 905MHz. It also changes the GPU steps to be more gradual to the 905MHz increase (587-670-780-905). It's a small Python tool that patches **your own** `boot.img`; no firmware is included or redistributed.
 
 > **Use at your own risk.**
 > This changes how your device runs its GPU. While this has been tested thoroughly, it will generate extra heat and make your battery drain faster, and may void any potential warranty. Not affiliated with AYN. Read the whole page first pls 
