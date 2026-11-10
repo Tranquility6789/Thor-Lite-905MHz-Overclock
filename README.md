@@ -39,15 +39,16 @@ It walks through the whole process and patches your `boot.img` in the browser; t
 ## 2. Patch it
 ```
 python3 thor_gpu_oc.py boot.img --info
-python3 thor_gpu_oc.py boot.img -o boot_gpu905_lv336.img --freq 905 --level 336
+python3 thor_gpu_oc.py boot.img -o boot_gpu_ladder.img --freq 905 --level 336
 ```
 Defaults are 905MHz and voltage level 336. Values outside what has been verified are refused unless you add
 `--force`. If 336 happens to be unstable on your chip, try `--level 384`.
+Also, `--mode top` gives the old behavior of going from 587 straight to 905.
 
 ## 3. Test without installing anything
 ```
 adb reboot bootloader
-fastboot boot boot_gpu905_lv336.img
+fastboot boot boot_gpu_ladder.img
 adb shell cat /sys/class/kgsl/kgsl-3d0/gpu_available_frequencies
 ```
 The first value should be `905000000`. This loads the image for one boot only; a restart returns to stock.
@@ -58,7 +59,7 @@ before going further.
 Only after step 3 has been stable for a while.
 ```
 fastboot getvar current-slot          # e.g. a
-fastboot flash boot_a boot_gpu905_lv336.img
+fastboot flash boot_a boot_gpu_ladder.img
 fastboot reboot
 ```
 Use the slot that `current-slot` reports. **Back to stock:** boot to fastboot and run
