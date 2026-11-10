@@ -6,13 +6,18 @@ device-tree blobs inside it, and writes a new image. Nothing is downloaded or re
 Standard library only (Python 3.8+).
 
   python3 thor_gpu_oc.py boot.img --info
-  python3 thor_gpu_oc.py boot.img -o boot_gpu905_lv336.img --freq 905 --level 336
+  python3 thor_gpu_oc.py boot.img -o boot_gpu_ladder.img              # stepped ladder (default): 905 780 670 587 490 400 305
+  python3 thor_gpu_oc.py boot.img -o boot_gpu905.img --mode top       # only replace the top step (670 -> 905)
 """
 import argparse, hashlib, re, struct, sys
 
 KNOWN_LEVELS = {64, 128, 144, 192, 224, 256, 320, 336, 384, 416}  # levels seen/verified on Thor Lite
 MAX_VERIFIED_MHZ = 905                                            # highest frequency verified so far
 PAGE_FALLBACK = 4096
+STOCK_MHZ = [670, 587, 525, 490, 441.6, 400, 305]                 # stock ladder this tool expects
+LADDER = [(780, 336), (670, 320), (587, 256), (490, 192)]         # steps 2-5 of the ladder: (MHz, voltage level)
+PROP_SRC = [0, 1, 0, 1, 3]                                        # stock step whose bus/ACD settings each new step inherits
+SKIP_PROPS = {"reg", "qcom,gpu-freq"}
 
 def die(msg):
     sys.exit("error: " + msg)
@@ -73,9 +78,39 @@ def gpu_tables(nodes):
            if p.endswith("qcom,gpu-pwrlevel@0") and "qcom,gpu-freq" in props]
     return opp, top
 
+def patch_ladder(d, lay, targets, steps):
+    """Re-plan the 7-step GPU ladder: top step + LADDER replace 670/587/525/490/441.6; 400 and 305 stay."""
+    n = 0
+    for o, nodes, opp, top in targets:
+        if [hz / 1e6 for hz, _ in opp] != STOCK_MHZ:
+            die("this image's GPU table isn't the stock 7-step ladder (already patched?). Use --mode top or a stock dump")
+        base = lay["dto"] + o
+        for i, (mhz, lvl) in enumerate(steps):
+            node = nodes[opp[i][1]]
+            struct.pack_into(">Q", d, base + node["opp-hz"][0], mhz * 10**6)
+            struct.pack_into(">I", d, base + node["opp-microvolt"][0], lvl); n += 2
+        bins = {}
+        for p, props in nodes.items():
+            if p.split("/")[-1].startswith("qcom,gpu-pwrlevel@") and "qcom,gpu-freq" in props:
+                bins.setdefault(p.rsplit("/", 1)[0], []).append(p)
+        for kids in bins.values():
+            kids.sort(key=lambda k: int(k.rsplit("@", 1)[1]))
+            if [struct.unpack(">I", nodes[k]["qcom,gpu-freq"][1])[0] / 1e6 for k in kids] != STOCK_MHZ + [0]:
+                continue                                           # leaves the lower-speed 5-step bin alone
+            stock = [{nm: v for nm, (_, v) in nodes[kids[i]].items() if nm not in SKIP_PROPS} for i in range(5)]
+            for i in range(5):
+                tgt = nodes[kids[i]]
+                struct.pack_into(">I", d, base + tgt["qcom,gpu-freq"][0], steps[i][0] * 10**6); n += 1
+                for nm, v in stock[PROP_SRC[i]].items():
+                    if nm not in tgt or len(tgt[nm][1]) != len(v):
+                        die("unexpected GPU level properties")
+                    d[base + tgt[nm][0]:base + tgt[nm][0] + len(v)] = v; n += 1
+    return n
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("boot_img"); ap.add_argument("-o", "--output")
+    ap.add_argument("--mode", choices=["ladder", "top"], default="ladder", help="ladder: 905/780/670/587/490/400/305 (default); top: only replace the top step")
     ap.add_argument("--freq", type=int, default=905, help="new GPU top frequency in MHz (default 905)")
     ap.add_argument("--level", type=int, default=336, help="voltage level for the top entry (default 336)")
     ap.add_argument("--info", action="store_true", help="print the GPU table and exit")
@@ -114,7 +149,12 @@ def main():
             die("new frequency must be higher than the second-highest GPU level in the table")
 
     changed = 0
-    for o, nodes, opp, top in targets:
+    if a.mode == "ladder":
+        if a.freq <= LADDER[0][0]:
+            die(f"in ladder mode the top step must be above {LADDER[0][0]}MHz")
+        print("note: use ladder mode only if your stock gpu_available_frequencies starts with 670000000")
+        changed = patch_ladder(d, lay, targets, [(a.freq, a.level)] + LADDER)
+    for o, nodes, opp, top in (targets if a.mode == "top" else []):
         old_hz, opp_path = opp[0]; props = nodes[opp_path]
         struct.pack_into(">Q", d, lay["dto"] + o + props["opp-hz"][0], new_hz)
         struct.pack_into(">I", d, lay["dto"] + o + props["opp-microvolt"][0], a.level)
@@ -133,7 +173,7 @@ def main():
 
     out = bytes(d) if a.full else bytes(d[:lay["end"]])
     open(a.output, "wb").write(out)
-    print(f"patched {changed} values across {len(targets)} dtb blob(s): top GPU level -> {a.freq}MHz, voltage level {a.level}")
+    print(f"patched {changed} values across {len(targets)} dtb blob(s), mode {a.mode}: top GPU level -> {a.freq}MHz, voltage level {a.level}")
     print(f"wrote {a.output} ({len(out)} bytes)")
 
 if __name__ == "__main__":
