@@ -85,6 +85,4 @@ Inspired by the community's Retroid Pocket 5 GPU overclock (670MHz to 905MHz). T
 
 This project does not use or include any of their files. It patches the user's own Thor Lite boot image. Just wanted to credit them for giving me the idea.
 
-And uh, Claude for patching the stuff together. I guess.
-
 MIT licensed.
